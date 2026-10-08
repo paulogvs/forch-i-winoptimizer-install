@@ -3,13 +3,15 @@
   One-line installer for FORCH.iA WinOptimizer (private repo friendly).
 
 .DESCRIPTION
-  Downloads the NSIS Setup from the PRIVATE GitHub repo
-  paulogvs/forch-i-winoptimizer using YOUR personal access token (PAT),
-  verifies its SHA256 against the release checksums, and runs it silently
-  (per-user install, no admin required).
+  Downloads the NSIS Setup from the PUBLIC releases repo
+  paulogvs/forch-i-winoptimizer-releases (binaries only; the code repo stays
+  private), verifies its SHA256 against the release checksums, and runs it
+  silently (per-user install, no admin required).
+
+  No GitHub token is needed for the default public feed. If you point -Repo
+  at the private code repo, a PAT (Contents: read-only) is asked securely.
 
   This bootstrap script is PUBLIC and contains no secrets and no app code.
-  Your token is asked interactively (never stored, never written to disk).
 
 .EXAMPLE
   irm https://raw.githubusercontent.com/paulogvs/forch-i-winoptimizer-install/main/Install.ps1 | iex
@@ -24,7 +26,7 @@
 param(
   [string]$Version = 'latest',
   [string]$Token = '',
-  [string]$Repo = 'paulogvs/forch-i-winoptimizer'
+  [string]$Repo = 'paulogvs/forch-i-winoptimizer-releases'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,8 +35,9 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Get-PlainToken {
-  param([string]$MaybeToken)
+  param([string]$MaybeToken, [string]$TargetRepo)
   if (-not [string]::IsNullOrWhiteSpace($MaybeToken)) { return $MaybeToken.Trim() }
+  if ($TargetRepo -eq 'paulogvs/forch-i-winoptimizer-releases') { return '' }
   $secure = Read-Host -Prompt 'GitHub PAT (fine-grained, Contents: read-only on forch-i-winoptimizer)' -AsSecureString
   $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
   try {
@@ -44,19 +47,28 @@ function Get-PlainToken {
   }
 }
 
-function Invoke-GitHubApi {
-  param([string]$Url, [string]$PlainToken)
+function New-ApiHeaders {
+  param([string]$PlainToken, [string]$Accept)
   $headers = @{
-    Authorization          = "Bearer $PlainToken"
-    Accept                 = 'application/vnd.github+json'
-    'X-GitHub-Api-Version' = '2022-11-28'
-    'User-Agent'           = 'forch-i-winoptimizer-installer'
+    Accept           = $Accept
+    'User-Agent'     = 'forch-i-winoptimizer-installer'
   }
-  return Invoke-RestMethod -Uri $Url -Headers $headers -UseBasicParsing
+  if (-not [string]::IsNullOrWhiteSpace($PlainToken)) {
+    $headers['Authorization'] = "Bearer $PlainToken"
+    $headers['X-GitHub-Api-Version'] = '2022-11-28'
+  }
+  return $headers
 }
 
-$plainToken = Get-PlainToken -MaybeToken $Token
-if ([string]::IsNullOrWhiteSpace($plainToken)) { throw 'A GitHub PAT is required (Contents: read-only). Aborting.' }
+function Invoke-GitHubApi {
+  param([string]$Url, [string]$PlainToken)
+  return Invoke-RestMethod -Uri $Url -Headers (New-ApiHeaders -PlainToken $PlainToken -Accept 'application/vnd.github+json') -UseBasicParsing
+}
+
+$plainToken = Get-PlainToken -MaybeToken $Token -TargetRepo $Repo
+if ($Repo -ne 'paulogvs/forch-i-winoptimizer-releases' -and [string]::IsNullOrWhiteSpace($plainToken)) {
+  throw 'A GitHub PAT is required for the private repo (Contents: read-only). Aborting.'
+}
 
 try {
   $tag = if ([string]::IsNullOrWhiteSpace($Version) -or $Version -eq 'latest') {
@@ -83,7 +95,7 @@ try {
   $exePath = Join-Path $work $setup.name
   $sumsPath = Join-Path $work 'checksums.sha256'
 
-  $dlHeaders = @{ Authorization = "Bearer $plainToken"; Accept = 'application/octet-stream'; 'User-Agent' = 'forch-i-winoptimizer-installer' }
+  $dlHeaders = New-ApiHeaders -PlainToken $plainToken -Accept 'application/octet-stream'
   Write-Host 'Downloading installer...' -ForegroundColor Cyan
   Invoke-WebRequest -Uri $setup.browser_download_url -Headers $dlHeaders -OutFile $exePath -UseBasicParsing
   Invoke-WebRequest -Uri $sums.browser_download_url -Headers $dlHeaders -OutFile $sumsPath -UseBasicParsing

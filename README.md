@@ -22,30 +22,32 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 
 What it does:
 
-1. Asks for **your** GitHub PAT (secure prompt, never stored).
-2. Resolves the latest release (or `-Version v0.18.0`) of the private repo.
-3. Downloads the NSIS `*-Setup-*.exe` + `checksums.sha256` with your token.
-4. **Verifies SHA256 before running anything** (aborts on mismatch).
-5. Runs the installer silently (per-user, no admin needed).
-6. Deletes temp files and clears the token from memory.
+1. Resolves the latest release (or `-Version v0.18.0`) of the **public**
+   releases repo (binaries only — **no token needed**).
+2. Downloads the NSIS `*-Setup-*.exe` + `checksums.sha256`.
+3. **Verifies SHA256 before running anything** (aborts on mismatch).
+4. Runs the installer silently (per-user, no admin needed).
+5. Deletes temp files.
 
-## 1) Create the PAT (once, 2 minutes)
+## 1) Do I need a PAT? (Short answer: no)
 
-`github.com` → avatar → **Settings** → **Developer settings** →
-**Personal access tokens** → **Fine-grained tokens** → **Generate new token**:
+The default feed is the public `forch-i-winoptimizer-releases` repo, so the
+one-liner just works — no login, no token.
 
-- Token name: `winoptimizer-install`
-- Expiration: 90 days (your call)
-- Repository access: **Only select repositories** → `paulogvs/forch-i-winoptimizer`
-- Permissions → **Repository** → **Contents: Read-only**
-- Generate → copy it (you won't see it again).
+You only need a fine-grained PAT if you point `-Repo` at the private code
+repo. To create one: `github.com` → avatar → **Settings** →
+**Developer settings** → **Personal access tokens** → **Fine-grained tokens**
+→ **Generate new token**: only repo `paulogvs/forch-i-winoptimizer`,
+**Contents: Read-only**, 90 days.
 
 ## 2) Security notes (read me, it's short)
 
 - This repo is public and contains **only** the bootstrap (`Install.ps1`).
   No app code, no secrets, no tokens. Audit it — it's ~100 lines.
-- The token is typed by you at install time (`Read-Host -AsSecureString`),
-  used only in the `Authorization` header, then wiped. It never touches disk.
+- With the default public feed there is **no token at all**. If you ever
+  target the private repo, the token is typed at install time
+  (`Read-Host -AsSecureString`), used only in the `Authorization` header,
+  then wiped — it never touches disk.
 - The installer binary is hash-verified against the release `checksums.sha256`
   before execution. If verification fails, nothing runs.
 - Prefer passing `-Version vX.Y.Z` to pin exactly what gets installed.
